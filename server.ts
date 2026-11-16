@@ -246,6 +246,37 @@ async function startServer(): Promise<void> {
   app.set('trust proxy', 1);
   app.use(express.json({ limit: '50mb' }));
 
+  const configuredOrigins = (process.env.ALLOWED_ORIGINS || 'https://chunariyaa.netlify.app')
+    .split(',')
+    .map((o) => o.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin) {
+      const normalizedOrigin = origin.replace(/\/+$/, '');
+      const isAllowed =
+        configuredOrigins.includes('*') ||
+        configuredOrigins.includes(normalizedOrigin) ||
+        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalizedOrigin);
+
+      if (isAllowed) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+      }
+    }
+
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+
+    next();
+  });
+
   // Ensure DB is initialized on startup
   readDb();
 

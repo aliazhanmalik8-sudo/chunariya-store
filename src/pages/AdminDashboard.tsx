@@ -30,7 +30,13 @@ import type {
   Product,
   StoreSettings,
 } from '../types';
-import { adminFetch, clearAdminToken, setAdminToken } from '../lib/adminApi';
+import {
+  ApiRequestError,
+  adminFetch,
+  clearAdminToken,
+  getApiBaseUrl,
+  setAdminToken,
+} from '../lib/adminApi';
 import {
   BulkCatalogEditorPanel,
   ManageCategoriesPanel,
@@ -60,6 +66,11 @@ export function AdminDashboard() {
   const { navigate, refreshStorefront } = useStore();
 
   const [authStatus, setAuthStatus] = useState<AdminAuthStatus | null>(null);
+  const [backendError, setBackendError] = useState<{
+    message: string;
+    status: number;
+    url: string;
+  } | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -85,6 +96,7 @@ export function AdminDashboard() {
 
   const loadAuthStatus = useCallback(async () => {
     try {
+      setBackendError(null);
       const data = await adminFetch<AdminAuthStatus>('/api/admin/auth-status');
       if (!data.authenticated && data.sessionReplaced) {
         clearAdminToken();
@@ -93,7 +105,17 @@ export function AdminDashboard() {
         );
       }
       setAuthStatus(data);
-    } catch {
+    } catch (err) {
+      if (
+        err instanceof ApiRequestError &&
+        (err.status === 404 || err.status === 0 || err.isHtmlResponse)
+      ) {
+        setBackendError({
+          message: err.message,
+          status: err.status,
+          url: err.url,
+        });
+      }
       setAuthStatus({
         configured: false,
         authenticated: false,
@@ -217,6 +239,63 @@ export function AdminDashboard() {
     return (
       <div className="min-h-screen bg-[#FCF9F6] flex items-center justify-center p-6 text-sm text-[#6E5D60]">
         Loading Admin Portal...
+      </div>
+    );
+  }
+
+  if (backendError && !authStatus.authenticated) {
+    const apiBase = getApiBaseUrl();
+    return (
+      <div className="min-h-screen bg-[#FCF9F6] flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-lg bg-white border border-[#E7DCD5] p-8 shadow-sm">
+          <div className="text-center mb-6">
+            <div className="w-11 h-11 bg-[#FAF0EE] border border-[#E7DCD5] flex items-center justify-center mx-auto mb-3 text-[#6B1D2F]">
+              <Lock className="w-5 h-5" />
+            </div>
+            <p className="text-xs tracking-[0.2em] uppercase text-[#6B1D2F]">CHUNARIYA</p>
+            <h1 className="font-display text-3xl font-semibold text-[#23191B] mt-1">
+              Admin Backend Not Connected
+            </h1>
+            <p className="text-xs text-[#6E5D60] mt-2 leading-relaxed">
+              The admin authentication endpoint returned{' '}
+              <strong className="text-[#23191B]">
+                {backendError.status === 404 ? 'HTTP 404' : 'a connection error'}
+              </strong>{' '}
+              from <code className="bg-[#FCF9F6] px-1.5 py-0.5 border border-[#E7DCD5]">{backendError.url}</code>.
+            </p>
+          </div>
+
+          <div className="p-4 bg-[#FAF0EE] border border-[#6B1D2F]/30 text-xs text-[#23191B] space-y-2 leading-relaxed mb-6">
+            <p className="font-semibold text-[#6B1D2F]">Why this happens on static hosting (Netlify):</p>
+            <p>
+              Netlify serves only the static frontend (<code className="bg-white px-1">dist/</code>) and does not run the Express backend (<code className="bg-white px-1">server.ts</code>), so <code className="bg-white px-1">/api/*</code> requests return 404 unless a backend URL is configured.
+            </p>
+            <p>
+              {apiBase
+                ? `Current VITE_API_BASE_URL: ${apiBase} — verify that your backend server is running and allows this origin.`
+                : 'To enable Admin login on Netlify, host server.ts (e.g. Render, Railway, or Cloud Run), set VITE_API_BASE_URL in Netlify environment variables, and redeploy—or use Firebase Authentication.'}
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <button
+              type="button"
+              onClick={() => void loadAuthStatus()}
+              className="w-full py-3 bg-[#6B1D2F] text-white text-xs font-medium tracking-[0.16em] uppercase hover:bg-[#4F1321] transition-colors inline-flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Retry Connection</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="w-full py-2.5 border border-[#E7DCD5] text-xs text-[#6E5D60] hover:text-[#6B1D2F] inline-flex items-center justify-center gap-1.5"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Back to Public Storefront</span>
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

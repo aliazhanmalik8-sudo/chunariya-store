@@ -3,6 +3,7 @@ import { Check, Mail, MapPin, MessageCircle, Phone } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { SmartImage } from '../components/SmartImage';
 import { buildWhatsappChatUrl, formatPrice } from '../lib/format';
+import { resolveApiUrl } from '../lib/adminApi';
 
 export function AboutPage() {
   const { settings, navigate } = useStore();
@@ -70,14 +71,25 @@ export function ContactPage() {
     setError(null);
     setSending(true);
     try {
-      const res = await fetch('/api/contact', {
+      const res = await fetch(resolveApiUrl('/api/contact'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, phone, message }),
       });
       if (!res.ok) {
-        const d = (await res.json()) as { error?: string };
-        throw new Error(d.error || 'Could not send message.');
+        let errMsg = '';
+        try {
+          const d = (await res.json()) as { error?: string };
+          errMsg = d.error || '';
+        } catch {
+          errMsg = '';
+        }
+        throw new Error(
+          errMsg ||
+            (res.status === 404
+              ? 'Contact backend API (/api/contact) is unavailable on this host.'
+              : 'Could not send message.'),
+        );
       }
       setSent(true);
       setName('');

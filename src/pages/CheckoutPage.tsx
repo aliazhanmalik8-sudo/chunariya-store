@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Check, Copy, ExternalLink, MessageCircle, ShoppingBag } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { formatPrice } from '../lib/format';
+import { resolveApiUrl } from '../lib/adminApi';
 import { SmartImage } from '../components/SmartImage';
 import type { Order } from '../types';
 
@@ -43,7 +44,7 @@ export function CheckoutPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch('/api/orders', {
+      const res = await fetch(resolveApiUrl('/api/orders'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -63,14 +64,21 @@ export function CheckoutPage() {
         }),
       });
 
-      const data = (await res.json()) as {
-        order?: Order;
-        whatsappUrl?: string;
-        error?: string;
-      };
+      const text = await res.text();
+      let data: { order?: Order; whatsappUrl?: string; error?: string } = {};
+      try {
+        data = text ? (JSON.parse(text) as typeof data) : {};
+      } catch {
+        data = {};
+      }
 
       if (!res.ok || !data.order || !data.whatsappUrl) {
-        throw new Error(data.error || 'Could not prepare your order. Please try again.');
+        throw new Error(
+          data.error ||
+            (res.status === 404
+              ? 'Order backend API (/api/orders) is unavailable on this host.'
+              : 'Could not prepare your order. Please try again.'),
+        );
       }
 
       setSubmittedOrder({ order: data.order, whatsappUrl: data.whatsappUrl });

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Sparkles } from 'lucide-react';
+import { resolveApiUrl } from '../lib/adminApi';
 
 interface SmartImageProps {
   src?: string;
@@ -10,12 +11,13 @@ interface SmartImageProps {
 
 export function SmartImage({ src, alt, className = '', fallbackTitle }: SmartImageProps) {
   const [failed, setFailed] = useState(false);
+  const resolvedSrc = src && src.startsWith('/uploads/') ? resolveApiUrl(src) : src;
 
   useEffect(() => {
     setFailed(false);
-  }, [src]);
+  }, [resolvedSrc]);
 
-  if (!src || failed) {
+  if (!resolvedSrc || failed) {
     return (
       <div
         className={`flex flex-col items-center justify-center bg-gradient-to-br from-[#FAF0EE] via-[#F6EFEA] to-[#EDE2DA] text-[#6E5D60] p-4 text-center ${className}`}
@@ -32,7 +34,7 @@ export function SmartImage({ src, alt, className = '', fallbackTitle }: SmartIma
 
   return (
     <img
-      src={src}
+      src={resolvedSrc}
       alt={alt}
       referrerPolicy="no-referrer"
       onError={() => setFailed(true)}

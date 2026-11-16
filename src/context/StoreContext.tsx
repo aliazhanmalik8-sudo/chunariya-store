@@ -7,6 +7,7 @@ import type {
   StoreSettings,
 } from '../types';
 import { getEffectivePrice } from '../lib/format';
+import { resolveApiUrl } from '../lib/adminApi';
 
 interface StoreContextValue {
   categories: Category[];
@@ -99,7 +100,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const refreshStorefront = useCallback(async () => {
     try {
       setError(null);
-      const res = await fetch(`/api/storefront?t=${Date.now()}`, { cache: 'no-store' });
+      const res = await fetch(resolveApiUrl(`/api/storefront?t=${Date.now()}`), {
+        cache: 'no-store',
+      });
       if (!res.ok) throw new Error('Unable to load store catalog.');
       const data = (await res.json()) as {
         categories: Category[];

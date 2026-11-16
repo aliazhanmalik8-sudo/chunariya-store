@@ -3,6 +3,36 @@ import { fileToDataUrl } from './format';
 const ADMIN_TOKEN_KEY = 'chunariya_admin_token';
 let memoryAdminToken: string | null = null;
 
+export function getApiBaseUrl(): string {
+  const raw = import.meta.env.VITE_API_BASE_URL;
+  if (typeof raw !== 'string') return '';
+  return raw.trim().replace(/\/+$/, '');
+}
+
+export function resolveApiUrl(path: string): string {
+  if (!path) return path;
+  if (/^(https?:)?\/\//i.test(path) || path.startsWith('data:') || path.startsWith('blob:')) {
+    return path;
+  }
+  const base = getApiBaseUrl();
+  if (!base) return path;
+  return path.startsWith('/') ? `${base}${path}` : `${base}/${path}`;
+}
+
+export class ApiRequestError extends Error {
+  status: number;
+  isHtmlResponse: boolean;
+  url: string;
+
+  constructor(message: string, status: number, isHtmlResponse: boolean, url: string) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.status = status;
+    this.isHtmlResponse = isHtmlResponse;
+    this.url = url;
+  }
+}
+
 export function getAdminToken(): string | null {
   if (memoryAdminToken) return memoryAdminToken;
   try {
@@ -58,6 +88,7 @@ export async function adminFetch<T = unknown>(
   url: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const targetUrl = resolveApiUrl(url);
   const token = getAdminToken();
   const headers = new Headers(options.headers || {});
   if (token) {
@@ -67,21 +98,42 @@ export async function adminFetch<T = unknown>(
     headers.set('Content-Type', 'application/json');
   }
 
-  const res = await fetch(url, {
-    ...options,
-    headers,
-    credentials: 'include',
-    cache: 'no-store',
-  });
+  let res: Response;
+  try {
+    res = await fetch(targetUrl, {
+      ...options,
+      headers,
+      credentials: 'include',
+      cache: 'no-store',
+    });
+  } catch {
+    throw new ApiRequestError(
+      'Unable to reach the store backend API. Check your connection or VITE_API_BASE_URL.',
+      0,
+      false,
+      targetUrl,
+    );
+  }
 
+  const contentType = (res.headers.get('content-type') || '').toLowerCase();
   const text = await res.text();
+  const looksLikeHtml =
+    contentType.includes('text/html') ||
+    text.trimStart().startsWith('<!DOCTYPE') ||
+    text.trimStart().startsWith('<html');
+
   let parsed: Record<string, unknown> = {};
-  if (text) {
+  if (text && !looksLikeHtml) {
     try {
       parsed = JSON.parse(text) as Record<string, unknown>;
     } catch {
       if (!res.ok) {
-        throw new Error(`Server error (${res.status}). Please try again.`);
+        throw new ApiRequestError(
+          `Server error (${res.status}). Please try again.`,
+          res.status,
+          false,
+          targetUrl,
+        );
       }
     }
   }
@@ -93,8 +145,19 @@ export async function adminFetch<T = unknown>(
     const msg =
       typeof parsed.error === 'string'
         ? parsed.error
-        : `Request failed with status ${res.status}.`;
-    throw new Error(msg);
+        : res.status === 404
+          ? `API endpoint not found (404): ${url}`
+          : `Request failed with status ${res.status}.`;
+    throw new ApiRequestError(msg, res.status, looksLikeHtml, targetUrl);
+  }
+
+  if (looksLikeHtml) {
+    throw new ApiRequestError(
+      `Expected JSON from ${url}, but received HTML instead. No API backend is handling /api/* routes on this host.`,
+      res.status,
+      true,
+      targetUrl,
+    );
   }
 
   return parsed as T;
