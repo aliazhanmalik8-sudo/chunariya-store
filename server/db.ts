@@ -11,7 +11,10 @@ import type {
 } from '../src/types.ts';
 
 export interface AdminAccount {
+  id: string;
+  name: string;
   email: string;
+  role: 'Primary Admin' | 'Co-Admin';
   salt: string;
   passwordHash: string;
   createdAt: string;
@@ -25,6 +28,7 @@ export interface DatabaseSchema {
   contactMessages: ContactMessage[];
   settings: StoreSettings;
   adminAccount: AdminAccount | null;
+  adminAccounts: AdminAccount[];
   orderCounter: number;
 }
 
@@ -367,6 +371,7 @@ function createInitialData(): DatabaseSchema {
     contactMessages: [],
     settings,
     adminAccount: null,
+    adminAccounts: [],
     orderCounter: 1001,
   };
 }
@@ -391,6 +396,27 @@ export function readDb(): DatabaseSchema {
     const raw = fs.readFileSync(DB_FILE, 'utf8');
     const parsed = JSON.parse(raw) as Partial<DatabaseSchema>;
     const defaults = createInitialData();
+    const rawAccounts = Array.isArray(parsed.adminAccounts) ? parsed.adminAccounts : [];
+    const migratedAccounts: AdminAccount[] = rawAccounts.map((acc, idx) => ({
+      id: acc.id || `adm-${idx + 1}`,
+      name: acc.name || (idx === 0 ? 'Primary Admin' : `Admin ${idx + 1}`),
+      email: String(acc.email || '').trim().toLowerCase(),
+      role: acc.role || (idx === 0 ? 'Primary Admin' : 'Co-Admin'),
+      salt: acc.salt,
+      passwordHash: acc.passwordHash,
+      createdAt: acc.createdAt || new Date().toISOString(),
+    }));
+    if (migratedAccounts.length === 0 && parsed.adminAccount && parsed.adminAccount.email) {
+      migratedAccounts.push({
+        id: parsed.adminAccount.id || 'adm-1',
+        name: parsed.adminAccount.name || 'Primary Admin',
+        email: String(parsed.adminAccount.email).trim().toLowerCase(),
+        role: parsed.adminAccount.role || 'Primary Admin',
+        salt: parsed.adminAccount.salt,
+        passwordHash: parsed.adminAccount.passwordHash,
+        createdAt: parsed.adminAccount.createdAt || new Date().toISOString(),
+      });
+    }
     return {
       categories: parsed.categories ?? defaults.categories,
       products: parsed.products ?? defaults.products,
@@ -398,7 +424,8 @@ export function readDb(): DatabaseSchema {
       reviews: parsed.reviews ?? defaults.reviews,
       contactMessages: parsed.contactMessages ?? [],
       settings: { ...defaults.settings, ...(parsed.settings ?? {}) },
-      adminAccount: parsed.adminAccount ?? null,
+      adminAccount: migratedAccounts[0] ?? null,
+      adminAccounts: migratedAccounts,
       orderCounter: typeof parsed.orderCounter === 'number' ? parsed.orderCounter : 1001,
     };
   } catch {

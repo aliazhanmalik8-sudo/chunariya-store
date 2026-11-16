@@ -12,7 +12,9 @@ import {
   verifyPassword,
   writeDb,
 } from './server/db.ts';
+import type { AdminAccount, DatabaseSchema } from './server/db.ts';
 import type {
+  AdminUserSummary,
   Category,
   CustomerSummary,
   Order,
@@ -95,7 +97,7 @@ function getAdminSession(req: Request): { email: string } | null {
 function setSessionCookie(req: Request, res: Response, token: string): void {
   const isHttps =
     req.secure ||
-    req.headers['x-forwarded-proto'] === 'https' ||
+    String(req.headers['x-forwarded-proto'] || '').includes('https') ||
     process.env.NODE_ENV === 'production';
 
   res.cookie(SESSION_COOKIE_NAME, token, {
@@ -107,12 +109,44 @@ function setSessionCookie(req: Request, res: Response, token: string): void {
   });
 }
 
-function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+function toAdminSummaries(accounts: AdminAccount[]): AdminUserSummary[] {
+  return accounts.map((a) => ({
+    id: a.id,
+    name: a.name,
+    email: a.email,
+    role: a.role,
+    createdAt: a.createdAt,
+  }));
+}
+
+function getValidAdminSession(
+  req: Request,
+  db: DatabaseSchema,
+): { email: string; name: string } | null {
   const session = getAdminSession(req);
+  if (!session) return null;
+
+  if (process.env.ADMIN_PASSWORD) {
+    const envEmail = (process.env.ADMIN_EMAIL || 'admin@chunariya.com').trim().toLowerCase();
+    if (session.email === envEmail) {
+      return { email: session.email, name: 'Primary Admin' };
+    }
+    return null;
+  }
+
+  const account = db.adminAccounts.find((a) => a.email === session.email);
+  if (!account) return null;
+  return { email: account.email, name: account.name };
+}
+
+function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  const db = readDb();
+  const session = getValidAdminSession(req, db);
   if (!session) {
     res.status(401).json({ error: 'Admin session expired or unauthorized. Please sign in again.' });
     return;
   }
+  res.locals.adminSession = session;
   next();
 }
 
@@ -431,23 +465,32 @@ async function startServer(): Promise<void> {
   app.get('/api/admin/auth-status', (req, res) => {
     const db = readDb();
     const envPassword = process.env.ADMIN_PASSWORD;
-    const configured = Boolean(envPassword || db.adminAccount);
-    const session = getAdminSession(req);
+    const configured = Boolean(envPassword || db.adminAccounts.length > 0);
+    const session = getValidAdminSession(req, db);
     res.json({
       configured,
       authenticated: Boolean(session),
       adminEmail: session?.email ?? null,
+      adminName: session?.name ?? null,
       usesEnvCredentials: Boolean(envPassword),
     });
   });
 
   app.post('/api/admin/setup', (req, res) => {
     const db = readDb();
-    if (process.env.ADMIN_PASSWORD || db.adminAccount) {
+    if (process.env.ADMIN_PASSWORD || db.adminAccounts.length > 0) {
       res.status(400).json({ error: 'Admin account is already configured. Please log in.' });
       return;
     }
-    const body = req.body as { email?: string; password?: string };
+    const body = req.body as {
+      name?: string;
+      email?: string;
+      password?: string;
+      secondName?: string;
+      secondEmail?: string;
+      secondPassword?: string;
+    };
+    const name = String(body.name || '').trim() || 'Primary Admin';
     const email = String(body.email || '').trim().toLowerCase();
     const password = String(body.password || '');
     if (!email || !email.includes('@')) {
@@ -459,18 +502,64 @@ async function startServer(): Promise<void> {
       return;
     }
 
-    const { salt, hash } = hashPassword(password);
-    db.adminAccount = {
+    const secondEmail = String(body.secondEmail || '').trim().toLowerCase();
+    const secondPassword = String(body.secondPassword || '');
+    const secondName = String(body.secondName || '').trim() || 'Co-Admin';
+    const hasSecondInput = Boolean(secondEmail || secondPassword);
+
+    if (hasSecondInput) {
+      if (!secondEmail || !secondEmail.includes('@')) {
+        res.status(400).json({ error: 'Please enter a valid email address for the 2nd admin.' });
+        return;
+      }
+      if (secondEmail === email) {
+        res.status(400).json({ error: 'The 2nd admin email must be different from the 1st admin email.' });
+        return;
+      }
+      if (secondPassword.length < 6) {
+        res.status(400).json({ error: 'The 2nd admin password must be at least 6 characters.' });
+        return;
+      }
+    }
+
+    const now = new Date().toISOString();
+    const primaryCreds = hashPassword(password);
+    const primaryAccount: AdminAccount = {
+      id: `adm-${crypto.randomUUID().slice(0, 8)}`,
+      name,
       email,
-      salt,
-      passwordHash: hash,
-      createdAt: new Date().toISOString(),
+      role: 'Primary Admin',
+      salt: primaryCreds.salt,
+      passwordHash: primaryCreds.hash,
+      createdAt: now,
     };
+
+    const accounts: AdminAccount[] = [primaryAccount];
+    if (hasSecondInput) {
+      const secondCreds = hashPassword(secondPassword);
+      accounts.push({
+        id: `adm-${crypto.randomUUID().slice(0, 8)}`,
+        name: secondName,
+        email: secondEmail,
+        role: 'Co-Admin',
+        salt: secondCreds.salt,
+        passwordHash: secondCreds.hash,
+        createdAt: now,
+      });
+    }
+
+    db.adminAccounts = accounts;
+    db.adminAccount = primaryAccount;
     writeDb(db);
 
     const token = signSessionToken(email);
     setSessionCookie(req, res, token);
-    res.status(201).json({ authenticated: true, adminEmail: email, token });
+    res.status(201).json({
+      authenticated: true,
+      adminEmail: email,
+      adminName: primaryAccount.name,
+      token,
+    });
   });
 
   app.post('/api/admin/login', (req, res) => {
@@ -486,25 +575,33 @@ async function startServer(): Promise<void> {
       if (email === envEmail && password === envPassword) {
         const token = signSessionToken(email);
         setSessionCookie(req, res, token);
-        res.json({ authenticated: true, adminEmail: email, token });
+        res.json({
+          authenticated: true,
+          adminEmail: email,
+          adminName: 'Primary Admin',
+          token,
+        });
         return;
       }
       res.status(401).json({ error: 'Invalid admin email or password.' });
       return;
     }
 
-    if (!db.adminAccount) {
+    if (db.adminAccounts.length === 0) {
       res.status(400).json({ error: 'No admin account configured yet.' });
       return;
     }
 
-    if (
-      email === db.adminAccount.email &&
-      verifyPassword(password, db.adminAccount.salt, db.adminAccount.passwordHash)
-    ) {
-      const token = signSessionToken(email);
+    const account = db.adminAccounts.find((a) => a.email === email);
+    if (account && verifyPassword(password, account.salt, account.passwordHash)) {
+      const token = signSessionToken(account.email);
       setSessionCookie(req, res, token);
-      res.json({ authenticated: true, adminEmail: email, token });
+      res.json({
+        authenticated: true,
+        adminEmail: account.email,
+        adminName: account.name,
+        token,
+      });
       return;
     }
 
@@ -514,7 +611,7 @@ async function startServer(): Promise<void> {
   app.post('/api/admin/logout', (req, res) => {
     const isHttps =
       req.secure ||
-      req.headers['x-forwarded-proto'] === 'https' ||
+      String(req.headers['x-forwarded-proto'] || '').includes('https') ||
       process.env.NODE_ENV === 'production';
     res.clearCookie(SESSION_COOKIE_NAME, {
       path: '/',
@@ -532,18 +629,14 @@ async function startServer(): Promise<void> {
       return;
     }
     const body = req.body as { currentPassword?: string; newPassword?: string; newEmail?: string };
+    const session = res.locals.adminSession as { email: string; name: string };
     const db = readDb();
-    if (!db.adminAccount) {
+    const account = db.adminAccounts.find((a) => a.email === session.email);
+    if (!account) {
       res.status(400).json({ error: 'Admin account not found.' });
       return;
     }
-    if (
-      !verifyPassword(
-        String(body.currentPassword || ''),
-        db.adminAccount.salt,
-        db.adminAccount.passwordHash,
-      )
-    ) {
+    if (!verifyPassword(String(body.currentPassword || ''), account.salt, account.passwordHash)) {
       res.status(401).json({ error: 'Current password is incorrect.' });
       return;
     }
@@ -553,15 +646,88 @@ async function startServer(): Promise<void> {
       return;
     }
     const { salt, hash } = hashPassword(newPassword);
-    db.adminAccount.salt = salt;
-    db.adminAccount.passwordHash = hash;
+    account.salt = salt;
+    account.passwordHash = hash;
     if (body.newEmail && body.newEmail.includes('@')) {
-      db.adminAccount.email = body.newEmail.trim().toLowerCase();
+      const normalizedNew = body.newEmail.trim().toLowerCase();
+      if (db.adminAccounts.some((a) => a.id !== account.id && a.email === normalizedNew)) {
+        res.status(400).json({ error: 'Another admin account already uses that email.' });
+        return;
+      }
+      account.email = normalizedNew;
     }
+    db.adminAccount = db.adminAccounts[0] ?? null;
     writeDb(db);
-    const token = signSessionToken(db.adminAccount.email);
+    const token = signSessionToken(account.email);
     setSessionCookie(req, res, token);
-    res.json({ ok: true, adminEmail: db.adminAccount.email, token });
+    res.json({ ok: true, adminEmail: account.email, adminName: account.name, token });
+  });
+
+  // Protected Team / Multi-Admin Management (2+ concurrent logins)
+  app.post('/api/admin/team', requireAdmin, (req, res) => {
+    if (process.env.ADMIN_PASSWORD) {
+      res.status(400).json({
+        error: 'Team accounts are disabled when ADMIN_PASSWORD environment variable is set.',
+      });
+      return;
+    }
+    const body = req.body as { name?: string; email?: string; password?: string };
+    const name = String(body.name || '').trim() || 'Co-Admin';
+    const email = String(body.email || '').trim().toLowerCase();
+    const password = String(body.password || '');
+
+    if (!email || !email.includes('@')) {
+      res.status(400).json({ error: 'Please enter a valid email address.' });
+      return;
+    }
+    if (password.length < 6) {
+      res.status(400).json({ error: 'Password must be at least 6 characters.' });
+      return;
+    }
+
+    const db = readDb();
+    if (db.adminAccounts.some((a) => a.email === email)) {
+      res.status(400).json({ error: 'An admin login with this email already exists.' });
+      return;
+    }
+
+    const { salt, hash } = hashPassword(password);
+    const newAdmin: AdminAccount = {
+      id: `adm-${crypto.randomUUID().slice(0, 8)}`,
+      name,
+      email,
+      role: db.adminAccounts.length === 0 ? 'Primary Admin' : 'Co-Admin',
+      salt,
+      passwordHash: hash,
+      createdAt: new Date().toISOString(),
+    };
+    db.adminAccounts.push(newAdmin);
+    db.adminAccount = db.adminAccounts[0] ?? null;
+    writeDb(db);
+
+    res.status(201).json({ adminAccounts: toAdminSummaries(db.adminAccounts) });
+  });
+
+  app.delete('/api/admin/team/:id', requireAdmin, (req, res) => {
+    const db = readDb();
+    const session = res.locals.adminSession as { email: string; name: string };
+    const target = db.adminAccounts.find((a) => a.id === req.params.id);
+    if (!target) {
+      res.status(404).json({ error: 'Admin account not found.' });
+      return;
+    }
+    if (db.adminAccounts.length <= 1) {
+      res.status(400).json({ error: 'At least one admin login must remain active.' });
+      return;
+    }
+    if (target.email === session.email) {
+      res.status(400).json({ error: 'You cannot delete the account you are currently logged in with.' });
+      return;
+    }
+    db.adminAccounts = db.adminAccounts.filter((a) => a.id !== req.params.id);
+    db.adminAccount = db.adminAccounts[0] ?? null;
+    writeDb(db);
+    res.json({ adminAccounts: toAdminSummaries(db.adminAccounts) });
   });
 
   // Protected Admin Bootstrap
@@ -577,6 +743,7 @@ async function startServer(): Promise<void> {
       reviews: db.reviews,
       contactMessages: db.contactMessages,
       settings: db.settings,
+      adminAccounts: toAdminSummaries(db.adminAccounts),
     });
   });
 

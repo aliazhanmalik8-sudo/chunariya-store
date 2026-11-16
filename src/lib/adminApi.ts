@@ -1,16 +1,38 @@
 import { fileToDataUrl } from './format';
 
 const ADMIN_TOKEN_KEY = 'chunariya_admin_token';
+let memoryAdminToken: string | null = null;
 
 export function getAdminToken(): string | null {
+  if (memoryAdminToken) return memoryAdminToken;
   try {
-    return localStorage.getItem(ADMIN_TOKEN_KEY);
+    const fromSession = sessionStorage.getItem(ADMIN_TOKEN_KEY);
+    if (fromSession) {
+      memoryAdminToken = fromSession;
+      return fromSession;
+    }
   } catch {
-    return null;
+    // Ignore restricted iframe storage errors
   }
+  try {
+    const fromLocal = localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (fromLocal) {
+      memoryAdminToken = fromLocal;
+      return fromLocal;
+    }
+  } catch {
+    // Ignore restricted iframe storage errors
+  }
+  return null;
 }
 
 export function setAdminToken(token: string): void {
+  memoryAdminToken = token;
+  try {
+    sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
+  } catch {
+    // Ignore storage errors
+  }
   try {
     localStorage.setItem(ADMIN_TOKEN_KEY, token);
   } catch {
@@ -19,6 +41,12 @@ export function setAdminToken(token: string): void {
 }
 
 export function clearAdminToken(): void {
+  memoryAdminToken = null;
+  try {
+    sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+  } catch {
+    // Ignore storage errors
+  }
   try {
     localStorage.removeItem(ADMIN_TOKEN_KEY);
   } catch {

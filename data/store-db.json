@@ -384,11 +384,12 @@
     "instagramUrl": "https://instagram.com",
     "facebookUrl": "https://facebook.com",
     "deliveryCharges": 250,
-    "freeDeliveryThreshold": 5000,
+    "freeDeliveryThreshold": 10000,
     "currency": "PKR",
     "heroBannerUrl": "/src/assets/images/hero_chunariya_editorial_1794844742164.jpg",
     "heroHeadline": "Discover Your Elegance with CHUNARIYA.",
     "heroSubheadline": "Timeless Pakistani lawn, delicate chiffon, and heirloom embroidery tailored for modern grace.",
+    "craftsmanshipBannerUrl": "/src/assets/images/banner_heritage_craftsmanship_1794844745278.jpg",
     "aboutUsContent": "Founded in Lahore with a deep reverence for Pakistani textile heritage, CHUNARIYA crafts women’s ensembles that balance artisanal embroidery with contemporary, wearable elegance.\n\nEvery collection—from breathable summer Swiss lawn to hand-finished formal chiffon—is thoughtfully designed in blush pinks, warm ivories, creams, and rich maroons accented with antique gold zari. Whether you prefer bespoke unstitched yardage or ready-to-wear silhouettes, our atelier delivers effortless luxury directly to your doorstep."
   },
   "adminAccount": null,

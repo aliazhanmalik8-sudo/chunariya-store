@@ -131,9 +131,18 @@ export interface ContactMessage {
   createdAt: string;
 }
 
+export interface AdminUserSummary {
+  id: string;
+  name: string;
+  email: string;
+  role: 'Primary Admin' | 'Co-Admin';
+  createdAt: string;
+}
+
 export interface AdminAuthStatus {
   configured: boolean;
   authenticated: boolean;
   adminEmail: string | null;
+  adminName?: string | null;
   usesEnvCredentials: boolean;
 }
