@@ -145,4 +145,5 @@ export interface AdminAuthStatus {
   adminEmail: string | null;
   adminName?: string | null;
   usesEnvCredentials: boolean;
+  sessionReplaced?: boolean;
 }

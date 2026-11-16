@@ -7,14 +7,11 @@ import {
   MessageCircle,
   Package,
   Search,
-  ShieldCheck,
   ShoppingBag,
   Trash2,
   Upload,
-  UserPlus,
 } from 'lucide-react';
 import type {
-  AdminUserSummary,
   ContactMessage,
   CustomerSummary,
   Order,
@@ -145,21 +142,6 @@ export function AdminOverviewPanel({
             >
               <Upload className="w-4 h-4 text-[#6B1D2F] mb-1.5" />
               <p className="text-xs font-semibold text-[#23191B]">Change Banner & Logo</p>
-            </button>
-            <button
-              type="button"
-              onClick={() => onNavigateTab('team')}
-              className="sm:col-span-2 p-3.5 border border-[#E7DCD5] bg-[#FCF9F6] text-left hover:border-[#6B1D2F] transition-colors flex items-center justify-between"
-            >
-              <div>
-                <p className="text-xs font-semibold text-[#23191B]">
-                  2-Person Admin Login & Team Access
-                </p>
-                <p className="text-[11px] text-[#6E5D60] mt-0.5">
-                  Add a second admin login so two people can manage the dashboard at the same time
-                </p>
-              </div>
-              <UserPlus className="w-4 h-4 text-[#6B1D2F] shrink-0" />
             </button>
           </div>
 
@@ -827,212 +809,6 @@ export function WebsiteSettingsPanel({
             className="px-5 py-2.5 border border-[#23191B] text-xs font-medium uppercase hover:bg-[#FAF0EE]"
           >
             Update Password
-          </button>
-        </form>
-      )}
-    </div>
-  );
-}
-
-export function AdminTeamPanel({
-  adminAccounts,
-  currentAdminEmail,
-  usesEnvCredentials,
-  onReload,
-  notify,
-}: {
-  adminAccounts: AdminUserSummary[];
-  currentAdminEmail: string | null;
-  usesEnvCredentials: boolean;
-  onReload: () => Promise<void>;
-  notify: (msg: string) => void;
-}) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleAddAdmin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    try {
-      await adminFetch('/api/admin/team', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: name.trim() || 'Co-Admin',
-          email: email.trim(),
-          password,
-        }),
-      });
-      setName('');
-      setEmail('');
-      setPassword('');
-      await onReload();
-      notify('New admin login added! Both people can now sign in at the same time.');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add admin login.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleRemoveAdmin = async (account: AdminUserSummary) => {
-    setError(null);
-    try {
-      await adminFetch(`/api/admin/team/${account.id}`, { method: 'DELETE' });
-      await onReload();
-      notify(`Removed admin login for ${account.email}.`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not remove admin login.');
-    }
-  };
-
-  return (
-    <div className="space-y-8 max-w-4xl">
-      <div>
-        <h2 className="font-display text-3xl font-semibold text-[#23191B]">
-          Admin Logins & Concurrent Access
-        </h2>
-        <p className="text-xs text-[#6E5D60] mt-1">
-          Two or more people can stay logged in to the CHUNARIYA Admin Dashboard at the exact same
-          time from different phones, laptops, or browsers — using either separate admin accounts or
-          the same account.
-        </p>
-      </div>
-
-      <div className="p-4 bg-[#FAF0EE] border border-[#E7DCD5] flex items-start gap-3 text-xs text-[#23191B]">
-        <ShieldCheck className="w-4 h-4 text-[#6B1D2F] shrink-0 mt-0.5" />
-        <div>
-          <p className="font-semibold">Simultaneous Multi-Device Sessions Active</p>
-          <p className="text-[#6E5D60] mt-0.5">
-            Signing in on a second phone or computer will never log out the first person. Use the
-            Refresh button in the top bar anytime to sync updates made by your partner.
-          </p>
-        </div>
-      </div>
-
-      {error && (
-        <div className="p-3 bg-[#FAF0EE] border border-[#6B1D2F]/40 text-xs text-[#6B1D2F]">
-          {error}
-        </div>
-      )}
-
-      {/* Active Admin Accounts List */}
-      <div className="bg-white border border-[#E7DCD5] p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="font-display text-2xl font-semibold text-[#23191B]">
-            Authorized Admin Logins ({adminAccounts.length})
-          </h3>
-          <span className="text-xs text-[#6E5D60]">Concurrent access enabled</span>
-        </div>
-
-        <div className="divide-y divide-[#E7DCD5]">
-          {adminAccounts.map((acc) => {
-            const isCurrentUser =
-              currentAdminEmail?.toLowerCase() === acc.email.toLowerCase();
-            return (
-              <div
-                key={acc.id}
-                className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-              >
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold text-[#23191B]">{acc.name}</span>
-                    <span className="text-[11px] uppercase tracking-wider px-2 py-0.5 bg-[#FAF0EE] border border-[#E7DCD5] text-[#6B1D2F]">
-                      {acc.role}
-                    </span>
-                    {isCurrentUser && (
-                      <span className="text-[11px] uppercase tracking-wider px-2 py-0.5 bg-[#1E7E45]/10 text-[#1E7E45] font-medium">
-                        Signed In Here
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-[#6E5D60] mt-1">{acc.email}</p>
-                </div>
-
-                {!usesEnvCredentials && adminAccounts.length > 1 && !isCurrentUser && (
-                  <button
-                    type="button"
-                    onClick={() => void handleRemoveAdmin(acc)}
-                    className="self-start sm:self-center px-3 py-1.5 border border-[#E7DCD5] text-xs text-[#6B1D2F] hover:bg-[#FAF0EE] inline-flex items-center gap-1.5"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Remove</span>
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Add 2nd / Co-Admin Account */}
-      {!usesEnvCredentials && (
-        <form
-          onSubmit={handleAddAdmin}
-          className="bg-white border border-[#E7DCD5] p-6 sm:p-8 space-y-4"
-        >
-          <div>
-            <h3 className="font-display text-2xl font-semibold text-[#23191B]">
-              Add Another Admin Login
-            </h3>
-            <p className="text-xs text-[#6E5D60] mt-1">
-              Create a dedicated email and password for a second person (partner, manager, or staff)
-              so both of you can sign in to `/admin` at the same time.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5">
-                Person Name
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Store Manager"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full border border-[#E7DCD5] px-3.5 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5">
-                Admin Email *
-              </label>
-              <input
-                type="email"
-                required
-                placeholder="partner@chunariya.pk"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full border border-[#E7DCD5] px-3.5 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5">
-                Password (min 6 chars) *
-              </label>
-              <input
-                type="password"
-                required
-                minLength={6}
-                placeholder="Create password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full border border-[#E7DCD5] px-3.5 py-2 text-sm"
-              />
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className="px-6 py-2.5 bg-[#6B1D2F] text-white text-xs font-medium tracking-wider uppercase hover:bg-[#4F1321] inline-flex items-center gap-2 disabled:opacity-60"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>{submitting ? 'Creating Login...' : 'Create Admin Login'}</span>
           </button>
         </form>
       )}

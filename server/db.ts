@@ -20,6 +20,13 @@ export interface AdminAccount {
   createdAt: string;
 }
 
+export interface ActiveAdminSession {
+  sessionId: string;
+  email: string;
+  name: string;
+  loggedInAt: string;
+}
+
 export interface DatabaseSchema {
   categories: Category[];
   products: Product[];
@@ -29,6 +36,7 @@ export interface DatabaseSchema {
   settings: StoreSettings;
   adminAccount: AdminAccount | null;
   adminAccounts: AdminAccount[];
+  activeAdminSession: ActiveAdminSession | null;
   orderCounter: number;
 }
 
@@ -372,6 +380,7 @@ function createInitialData(): DatabaseSchema {
     settings,
     adminAccount: null,
     adminAccounts: [],
+    activeAdminSession: null,
     orderCounter: 1001,
   };
 }
@@ -426,6 +435,7 @@ export function readDb(): DatabaseSchema {
       settings: { ...defaults.settings, ...(parsed.settings ?? {}) },
       adminAccount: migratedAccounts[0] ?? null,
       adminAccounts: migratedAccounts,
+      activeAdminSession: parsed.activeAdminSession ?? null,
       orderCounter: typeof parsed.orderCounter === 'number' ? parsed.orderCounter : 1001,
     };
   } catch {
